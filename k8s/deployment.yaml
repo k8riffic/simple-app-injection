@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mdr-webhook
+  namespace: mdr-webhook
+spec:
+  selector:
+    app: mdr-webhook
+  ports:
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: 443
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: mdr-webhook
+  namespace: mdr-webhook
+  name: mdr-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mdr-webhook
+  template:
+    metadata:
+      labels:
+        app: mdr-webhook
+      name: mdr-webhook
+    spec:
+      serviceAccountName: mdr-webhook
+      volumes:  
+      - name: certificates
+        secret:
+          secretName: mdr-webhook-cert
+      containers:
+        - name: mdr-webhook
+          image: ranjkrishnan/mutating-webhook:0.0.8  # replace image
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ENVIRONMENT_ID
+              value: rss61842
+            - name: DT_PAAS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: DT_PAAS_TOKEN
+                  name: dynatrace-secret
+            - name: FLAVOR
+              value: "multidistro"
+            - name: TECHNOLOGY
+              value: "all"
+            - name: DT_NETWORK_ZONE
+              value: "" # add a valid network zone
+          command:
+            - "/bin/sh"
+            - "-c"
+            - "gunicorn \
+            --log-level debug \
+            --certfile /etc/webhook/certs/tls.crt \
+            --keyfile /etc/webhook/certs/tls.key \
+            --bind=0.0.0.0:443 app:app"
+          volumeMounts:
+            - name: certificates
+              mountPath: /etc/webhook/certs
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              scheme: HTTPS
+              port: 443
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              scheme: HTTPS
+              port: 443
+            initialDelaySeconds: 3
+            periodSeconds: 10
+      
